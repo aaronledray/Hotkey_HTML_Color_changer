@@ -1,85 +1,103 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Editor, MarkdownView, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 
-// Remember to rename these classes and interfaces!
-
-interface MyPluginSettings {
-	mySetting: string;
+interface ColorCyclePluginSettings {
+	textColors: string;
+	highlightColors: string;
 }
 
-const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
+const DEFAULT_SETTINGS: ColorCyclePluginSettings = {
+	textColors: 'black, blue, red, green, null',
+	highlightColors: 'yellow, cyan, #fa8072, #ccff00, null'
+};
+
+
+// Validate a single CSS color by testing on a dummy element
+function isValidCssColor(color: string): boolean {
+	const s = new Option().style;
+	s.color = '';
+	s.color = color;
+	return !!s.color;
 }
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+
+
+export default class ColorCyclePlugin extends Plugin {
+	settings!: ColorCyclePluginSettings;
 
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status Bar Text');
-
-		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
+			id: 'cycle-html-text-color',
+			name: 'Cycle HTML Text Color on Selection',
 			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
+				const rawList = this.settings.textColors.split(',').map(c => c.trim());
+				const colors = rawList.filter(c => c === 'null' || isValidCssColor(c));
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
+				if (colors.length === 0) {
+					new Notice("No valid text colors configured.");
+					return;
 				}
+				this.cycleColor(editor, 'color', colors);
 			}
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addCommand({
+			id: 'cycle-html-highlight-color',
+			name: 'Cycle HTML Highlight (Background Color) on Selection',
+			editorCallback: (editor: Editor, view: MarkdownView) => {
+				const rawList = this.settings.highlightColors.split(',').map(c => c.trim());
+				const colors = rawList.filter(c => c === 'null' || isValidCssColor(c));
 
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			console.log('click', evt);
+				if (colors.length === 0) {
+					new Notice("No valid highlight colors configured.");
+					return;
+				}
+				this.cycleColor(editor, 'background-color', colors);
+			}
 		});
 
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+
+		this.addSettingTab(new ColorCycleSettingTab(this.app, this));
+	}
+
+	private cycleColor(editor: Editor, styleType: 'color' | 'background-color', colors: string[]) {
+		const selection = editor.getSelection();
+		if (!selection) {
+			new Notice("Please select some text.");
+			return;
+		}
+
+		const cursor = editor.getCursor("from");
+		const regex = new RegExp(`<span\\s+style="${styleType}:\\s*(.+?);?\\s*">([\\s\\S]+?)<\\/span>`);
+		const match = selection.match(regex);
+
+		let newText: string;
+		let innerText: string;
+
+		if (match) {
+			const currentColor = match[1].trim();
+			innerText = match[2];
+			const currentIndex = colors.indexOf(currentColor);
+			const nextColor = colors[(currentIndex + 1) % colors.length];
+			newText = nextColor === 'null' ? innerText : `<span style="${styleType}:${nextColor};">${innerText}</span>`;
+		} else {
+			innerText = selection;
+			newText = `<span style="${styleType}:${colors[0]};">${innerText}</span>`;
+		}
+
+		editor.replaceSelection(newText);
+
+		const start = cursor;
+		const end = {
+			line: start.line,
+			ch: start.ch + newText.length
+		};
+		editor.setSelection(start, end);
 	}
 
 	onunload() {
-
+		// clean up if needed
 	}
 
 	async loadSettings() {
@@ -91,44 +109,54 @@ export default class MyPlugin extends Plugin {
 	}
 }
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+class ColorCycleSettingTab extends PluginSettingTab {
+	plugin: ColorCyclePlugin;
 
-	onOpen() {
-		const {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
-	}
-}
-
-class SampleSettingTab extends PluginSettingTab {
-	plugin: MyPlugin;
-
-	constructor(app: App, plugin: MyPlugin) {
+	constructor(app: App, plugin: ColorCyclePlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
 	display(): void {
-		const {containerEl} = this;
-
+		const { containerEl } = this;
 		containerEl.empty();
 
+		containerEl.createEl("h2", { text: "HTML Painter Hotkey Settings" });
+
 		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
+			.setName("Text Colors")
+			.setDesc("Comma-separated list of text colors (e.g., black, red, #00ffcc, null)")
+			.addTextArea((textArea) => {
+				textArea
+				  .setPlaceholder("e.g., red, green, #0044ff, null")
+				  .setValue(this.plugin.settings.textColors)
+				  .onChange(async (value: string) => {
+					this.plugin.settings.textColors = value;
 					await this.plugin.saveSettings();
-				}));
+				  });
+			  });
+
+
+
+		new Setting(containerEl)
+		.setName("Highlight Colors")
+		.setDesc("Comma-separated list of highlight (background) colors (e.g., yellow, #ffff00, null)")
+		.addTextArea((textArea) => {
+		textArea
+			.setPlaceholder("e.g., yellow, cyan, #fa8072, #ccff00, null")
+			.setValue(this.plugin.settings.highlightColors)
+			.onChange(async (value: string) => {
+			this.plugin.settings.highlightColors = value;
+			await this.plugin.saveSettings();
+			});
+		});
+
+
+
+
+		new Setting(containerEl)
+			.setName("Hotkeys")
+			.setDesc("Assign hotkeys under Settings → Hotkeys → Search 'HTML Painter'")
+			.setDisabled(true);
 	}
 }
