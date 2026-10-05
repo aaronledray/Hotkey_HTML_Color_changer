@@ -147,7 +147,19 @@ export default class ColorCyclePlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		const data: unknown = await this.loadData();
+		const savedSettings = data && typeof data === 'object'
+			? data as Record<string, unknown>
+			: {};
+
+		this.settings = {
+			textColors: typeof savedSettings.textColors === 'string'
+				? savedSettings.textColors
+				: DEFAULT_SETTINGS.textColors,
+				highlightColors: typeof savedSettings.highlightColors === 'string'
+					? savedSettings.highlightColors
+					: DEFAULT_SETTINGS.highlightColors,
+		};
 	}
 
 	async saveSettings() {
@@ -163,30 +175,53 @@ class ColorCycleSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	// Obsidian 1.13+ uses the declarative definitions for settings search.
+	getSettingDefinitions() {
+		return [
+			{
+				name: "Text Colors",
+				desc: "Comma-separated list of text colors, such as black, red, #00ffcc, null.",
+				control: {
+					type: "textarea" as const,
+					key: "textColors",
+					placeholder: "e.g., red, green, #0044ff, null",
+					rows: 3,
+				},
+			},
+			{
+				name: "Highlight Colors",
+				desc: "Comma-separated list of highlight colors, such as yellow, cyan, #fa8072, null.",
+				control: {
+					type: "textarea" as const,
+					key: "highlightColors",
+					placeholder: "e.g., yellow, cyan, #fa8072, #ccff00, null",
+					rows: 3,
+				},
+			},
+		];
+	}
+
+	// Legacy settings UI for Obsidian versions before 1.13.
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl("h2", { text: "HTML Painter Hotkey Settings" });
-
 		new Setting(containerEl)
 			.setName("Text Colors")
-			.setDesc("Comma-separated list of text colors (e.g., black, red, #00ffcc, null)")
+			.setDesc("Comma-separated list of text colors, such as black, red, #00ffcc, null.")
 			.addTextArea((textArea) => {
 				textArea
 					.setPlaceholder("e.g., red, green, #0044ff, null")
 					.setValue(this.plugin.settings.textColors)
 					.onChange(async (value: string) => {
-					this.plugin.settings.textColors = value;
-					await this.plugin.saveSettings();
+						this.plugin.settings.textColors = value;
+						await this.plugin.saveSettings();
 					});
 			});
 
-
-
 		new Setting(containerEl)
 			.setName("Highlight Colors")
-			.setDesc("Comma-separated list of highlight (background) colors (e.g., yellow, #ffff00, null)")
+			.setDesc("Comma-separated list of highlight colors, such as yellow, cyan, #fa8072, null.")
 			.addTextArea((textArea) => {
 				textArea
 					.setPlaceholder("e.g., yellow, cyan, #fa8072, #ccff00, null")
@@ -196,13 +231,5 @@ class ColorCycleSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					});
 			});
-
-
-
-
-		new Setting(containerEl)
-			.setName("Hotkeys")
-			.setDesc("Assign hotkeys under Settings → Hotkeys → Search 'HTML Painter'")
-			.setDisabled(true);
 	}
 }
