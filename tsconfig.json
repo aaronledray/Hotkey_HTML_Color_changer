@@ -20,5 +20,8 @@
   },
   "include": [
     "**/*.ts"
+  ],
+  "exclude": [
+    "0_HTML_painter_hotkey/**"
   ]
 }

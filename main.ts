@@ -19,6 +19,72 @@ function isValidCssColor(color: string): boolean {
 	return !!s.color;
 }
 
+function parseColorList(value: string): string[] {
+	return value
+		.split(',')
+		.map((color) => color.trim())
+		.filter((color) => color === 'null' || isValidCssColor(color));
+}
+
+function getSelectionEnd(start: { line: number; ch: number }, text: string) {
+	const lines = text.split('\n');
+	return {
+		line: start.line + lines.length - 1,
+		ch: lines.length === 1 ? start.ch + lines[0].length : lines[lines.length - 1].length,
+	};
+}
+
+function updateInlineColor(selection: string, styleType: 'color' | 'background-color', colors: string[]): string {
+	const spanMatch = selection.match(/^<span\b([^>]*)>([\s\S]*)<\/span>$/i);
+	if (!spanMatch) {
+		return colors[0] === 'null'
+			? selection
+			: `<span style="${styleType}:${colors[0]};">${selection}</span>`;
+	}
+
+	const attributes = spanMatch[1];
+	const innerText = spanMatch[2];
+	const styleMatch = attributes.match(/\bstyle\s*=\s*(["'])([\s\S]*?)\1/i);
+	if (!styleMatch) {
+		return colors[0] === 'null'
+			? selection
+			: `<span style="${styleType}:${colors[0]};"${attributes}>${innerText}</span>`;
+	}
+
+	const declarations = styleMatch[2]
+		.split(';')
+		.map((declaration) => declaration.trim())
+		.filter(Boolean);
+	const propertyIndex = declarations.findIndex((declaration) => {
+		const separator = declaration.indexOf(':');
+		return separator !== -1 && declaration.slice(0, separator).trim().toLowerCase() === styleType;
+	});
+	const currentColor = propertyIndex === -1
+		? undefined
+		: declarations[propertyIndex].slice(declarations[propertyIndex].indexOf(':') + 1).trim();
+	const currentIndex = currentColor === undefined ? -1 : colors.indexOf(currentColor);
+	const nextColor = colors[(currentIndex + 1) % colors.length];
+
+	if (nextColor === 'null') {
+		if (propertyIndex !== -1) {
+			declarations.splice(propertyIndex, 1);
+		}
+	} else if (propertyIndex === -1) {
+		declarations.push(`${styleType}:${nextColor}`);
+	} else {
+		declarations[propertyIndex] = `${styleType}:${nextColor}`;
+	}
+
+	if (declarations.length === 0) {
+		return innerText;
+	}
+
+	const updatedStyle = declarations.join('; ');
+	const updatedAttributes = styleMatch[0].replace(styleMatch[2], updatedStyle);
+	const updatedSpan = attributes.replace(styleMatch[0], updatedAttributes);
+	return `<span${updatedSpan}>${innerText}</span>`;
+}
+
 
 
 export default class ColorCyclePlugin extends Plugin {
@@ -31,8 +97,7 @@ export default class ColorCyclePlugin extends Plugin {
 			id: 'cycle-html-text-color',
 			name: 'Cycle HTML Text Color on Selection',
 			editorCallback: (editor: Editor, view: MarkdownView) => {
-				const rawList = this.settings.textColors.split(',').map(c => c.trim());
-				const colors = rawList.filter(c => c === 'null' || isValidCssColor(c));
+				const colors = parseColorList(this.settings.textColors);
 
 				if (colors.length === 0) {
 					new Notice("No valid text colors configured.");
@@ -46,8 +111,7 @@ export default class ColorCyclePlugin extends Plugin {
 			id: 'cycle-html-highlight-color',
 			name: 'Cycle HTML Highlight (Background Color) on Selection',
 			editorCallback: (editor: Editor, view: MarkdownView) => {
-				const rawList = this.settings.highlightColors.split(',').map(c => c.trim());
-				const colors = rawList.filter(c => c === 'null' || isValidCssColor(c));
+				const colors = parseColorList(this.settings.highlightColors);
 
 				if (colors.length === 0) {
 					new Notice("No valid highlight colors configured.");
@@ -69,30 +133,12 @@ export default class ColorCyclePlugin extends Plugin {
 		}
 
 		const cursor = editor.getCursor("from");
-		const regex = new RegExp(`<span\\s+style="${styleType}:\\s*(.+?);?\\s*">([\\s\\S]+?)<\\/span>`);
-		const match = selection.match(regex);
-
-		let newText: string;
-		let innerText: string;
-
-		if (match) {
-			const currentColor = match[1].trim();
-			innerText = match[2];
-			const currentIndex = colors.indexOf(currentColor);
-			const nextColor = colors[(currentIndex + 1) % colors.length];
-			newText = nextColor === 'null' ? innerText : `<span style="${styleType}:${nextColor};">${innerText}</span>`;
-		} else {
-			innerText = selection;
-			newText = `<span style="${styleType}:${colors[0]};">${innerText}</span>`;
-		}
+		const newText = updateInlineColor(selection, styleType, colors);
 
 		editor.replaceSelection(newText);
 
 		const start = cursor;
-		const end = {
-			line: start.line,
-			ch: start.ch + newText.length
-		};
+		const end = getSelectionEnd(start, newText);
 		editor.setSelection(start, end);
 	}
 
@@ -128,28 +174,28 @@ class ColorCycleSettingTab extends PluginSettingTab {
 			.setDesc("Comma-separated list of text colors (e.g., black, red, #00ffcc, null)")
 			.addTextArea((textArea) => {
 				textArea
-				  .setPlaceholder("e.g., red, green, #0044ff, null")
-				  .setValue(this.plugin.settings.textColors)
-				  .onChange(async (value: string) => {
+					.setPlaceholder("e.g., red, green, #0044ff, null")
+					.setValue(this.plugin.settings.textColors)
+					.onChange(async (value: string) => {
 					this.plugin.settings.textColors = value;
 					await this.plugin.saveSettings();
-				  });
-			  });
+					});
+			});
 
 
 
 		new Setting(containerEl)
-		.setName("Highlight Colors")
-		.setDesc("Comma-separated list of highlight (background) colors (e.g., yellow, #ffff00, null)")
-		.addTextArea((textArea) => {
-		textArea
-			.setPlaceholder("e.g., yellow, cyan, #fa8072, #ccff00, null")
-			.setValue(this.plugin.settings.highlightColors)
-			.onChange(async (value: string) => {
-			this.plugin.settings.highlightColors = value;
-			await this.plugin.saveSettings();
+			.setName("Highlight Colors")
+			.setDesc("Comma-separated list of highlight (background) colors (e.g., yellow, #ffff00, null)")
+			.addTextArea((textArea) => {
+				textArea
+					.setPlaceholder("e.g., yellow, cyan, #fa8072, #ccff00, null")
+					.setValue(this.plugin.settings.highlightColors)
+					.onChange(async (value: string) => {
+						this.plugin.settings.highlightColors = value;
+						await this.plugin.saveSettings();
+					});
 			});
-		});
 
 
 

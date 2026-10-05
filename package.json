@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-html-painter-hotkey",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Cycle through text or highlight colors on selected text using customizable hotkeys.",
 	"main": "main.js",
 	"scripts": {
