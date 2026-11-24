@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES6",
+    "module": "ESNext",
+    "moduleResolution": "node",
+    "outDir": "./",
+    "strict": true,
+    "jsx": "react",
+    "esModuleInterop": true
+  },
+  "files": [
+    "main_old.ts"
+  ],
+  "exclude": []
+}

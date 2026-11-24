@@ -1,0 +1,10 @@
+{
+  "id": "0_HTML_painter_hotkey",
+  "name": "HTML Painter Hotkey",
+  "version": "0.0.2",
+  "minAppVersion": "0.0.2",
+  "description": "Cycles through HTML colors on highlighted text.",
+  "author": "APL",
+  "authorUrl": "https://yourwebsite.com",
+  "isDesktopOnly": false
+}
